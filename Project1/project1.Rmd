@@ -1,0 +1,138 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library("hdi")
+library(pls)  # pcr
+library(Matrix)
+library(glmnet)  # elastic net
+data(riboflavin)
+rbf <- riboflavin
+#View(rbf)
+```
+
+Split data into training and test sets
+```{r}
+
+n <- nrow(riboflavin)
+train <- sample(1:n, n / 4) # divide in 1:3 ratio
+rbf.train <- rbf[-train, ]
+rbf.test <- rbf[train, ]
+```
+
+
+Goal 1
+PCR stabalizes for different components
+PLS stavilizes for different components
+```{r}
+set.seed(688)
+
+# pcr
+# segments sets the number of folds
+rbf.pcr <- pcr(y ~ ., data = rbf.train, scale = TRUE, validation = "CV", segments=5)
+#coef(rbf.pcr)
+#summary(rbf.pcr)
+validationplot(rbf.pcr, val.type = "MSEP")   # MSE vs. number of components
+
+pcr.pred <- predict(rbf.pcr, rbf.test, ncomp = 23) 
+mean((pcr.pred - rbf.test$y)^2)
+
+rbf.pls <- plsr(y ~ ., data = rbf.train, scale = TRUE, validation = "CV", segments=5)
+#coef(rbf.pls)
+#summary(rbf.pls)
+validationplot(rbf.pls, val.type = "MSEP")   # MSE vs. number of components
+
+pls.pred <- predict(rbf.pls, rbf.test$x, ncomp = 8) 
+mean((pls.pred - rbf.test$y)^2)
+
+```
+
+
+Goal 2
+```{r}
+# (c) Ridge regression
+# 54/nfolds must be greater than 3
+
+x.train <- data.matrix(rbf.train$x)
+y.train <- data.matrix(rbf.train$y)
+x.test <- data.matrix(rbf.test$x)
+
+# Ridge wo CV
+rbf.ridge <- glmnet(x.train, y.train, alpha=0)  # alpha = 0 means ridge regression
+#rbf.ridge$lambda.1se  # one standard deviation away from minimizing lambda
+#coef(rbf.ridge)  # coefficients for lambda.1se
+
+# Lasso wo CV
+rbf.lasso <- glmnet(x.train, y.train, alpha=1)
+#rbf.lasso$lambda.1se  # one standard deviation away from minimizing lambda
+#coef(rbf.lasso)  # coefficients for lambda.1se
+
+
+# Ridge w CV
+rbf.ridge.cv <- cv.glmnet(x.train, y.train, alpha=0, nfolds = 10)  # alpha = 0 means ridge regression
+#rbf.ridge.cv$lambda.1se  # one standard deviation away from minimizing lambda
+#coef(rbf.ridge.cv)  # coefficients for lambda.1se
+
+# Lasso w CV
+rbf.lasso.cv <- cv.glmnet(x.train, y.train, alpha=1, nfolds = 10)
+#rbf.lasso$lambda.1se  # one standard deviation away from minimizing lambda
+#coef(rbf.lasso)  # coefficients for lambda.1se
+
+### Plots
+# Ridge wo CV
+plot(rbf.ridge,xvar="lambda",label=TRUE)
+
+# Ridge w CV
+plot(rbf.ridge.cv)
+
+# Lasso wo CV
+plot(rbf.lasso,xvar="lambda",label=TRUE)
+
+# Lasso w CV
+plot(rbf.lasso.cv)
+
+
+### Report test error
+# Ridge
+ridge.pred <- predict(rbf.ridge, s = 20.1, newx = x.test)
+ridge.MSE <- mean((rbf.test$y - ridge.pred)^2)
+ridge.MSE
+
+# Lasso
+lasso.pred <- predict(rbf.lasso, s = 0.0743 , newx = x.test)
+lasso.MSE <- mean((rbf.test$y - lasso.pred)^2)
+lasso.MSE
+
+# We choose log(lambda) = 3 i.e lambda ≈ 20.1 for the ridge since not much slope
+# We choose log(lambda) = -2.6 i.e lambda ≈ 0.0743 for the Lasso since it is before the slope starts
+
+```
+
+
+
+Goal 3
+Only run this chunk one time since it takes alot of time
+```{r}
+fit.multi <- hdi(rbf[,-1], rbf[,1], B=100)
+```
+plot the 
+```{r}
+fit.multi$pval.corr
+# Check the values less than p = 10%
+fit.multi$pval.corr[fit.multi$pval.corr < .90]
+confint(fit.multi,
+  parm = which(fit.multi$pval.corr<= 0.9),
+level = 0.95)
+```
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
